@@ -1,0 +1,18 @@
+{
+  "engine.reading": { "zh": "正在读取压缩包…", "en": "Reading input…" },
+  "engine.found": { "zh": "找到 {0} 张图片", "en": "{0} images found" },
+  "engine.progress": { "zh": "已处理 {0} / {1}", "en": "Processed {0} / {1}" },
+  "engine.recompress": { "zh": "{0} MB 超过目标，正在重压（系数 {1}）", "en": "{0} MB exceeds the target; recompressing (factor {1})" },
+  "engine.assembling": { "zh": "正在组装 PDF…", "en": "Assembling PDF…" },
+  "engine.writing": { "zh": "正在写入文件…", "en": "Writing output file…" },
+  "engine.done": { "zh": "完成：{0} 页，{1} MB，用时 {2}", "en": "Done: {0} pages, {1} MB, in {2}" },
+  "engine.encrypted": { "zh": "PDF 已用 AES-256 打开密码加密", "en": "PDF encrypted with an AES-256 open password" },
+  "engine.plain": { "zh": "未设置 PDF 密码", "en": "No PDF password set" },
+  "engine.skipped": { "zh": "第 {0} 张「{1}」已跳过：{2}", "en": "Image {0} \"{1}\" skipped: {2}" },
+  "engine.repaired": { "zh": "已补齐 {0} 张截断 JPEG", "en": "Repaired {0} truncated JPEG file(s)" },
+  "err.noImages": { "zh": "没有找到支持的图片", "en": "No supported images found" },
+  "err.zipEncrypted": { "zh": "压缩包已加密，请输入密码", "en": "This archive is encrypted; enter its password" },
+  "err.rarPass": { "zh": "RAR 密码不正确", "en": "Incorrect RAR archive password" },
+  "err.outRequired": { "zh": "请指定输出路径", "en": "Specify an output file path" },
+  "err.cancelled": { "zh": "任务已取消", "en": "Job cancelled" }
+}

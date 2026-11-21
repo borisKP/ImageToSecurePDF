@@ -1,0 +1,30 @@
+# Build outputs
+*.exe
+*.dmg
+*.zip
+dist/
+build/
+.build/
+outputs/
+
+# macOS app bundle binaries and local signature (source stays tracked)
+macos/ImageToSecurePDF.app/Contents/MacOS/ImageToSecurePDF
+macos/ImageToSecurePDF.app/Contents/MacOS/imgtopdf-helper
+macos/ImageToSecurePDF.app/Contents/_CodeSignature/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Go
+engine/imgtopdf-helper
+engine/*.test
+
+# Local fixtures and results (regenerate with tests/gen_images.go)
+tests/fixtures/images/
+tests/fixtures/*.zip
+tests/fixtures/*.7z
+tests/fixtures/*.pdf
+
+# Local notes (swiftui draft is intentionally kept as a lesson)

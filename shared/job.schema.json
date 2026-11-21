@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ImageToSecurePDF job",
+  "type": "object",
+  "required": ["source", "outPath"],
+  "properties": {
+    "source": { "type": "string", "description": "图片文件夹、ZIP、7z 或 RAR 路径" },
+    "archivePass": { "type": "string", "description": "压缩包密码；仅内存使用" },
+    "outPath": { "type": "string", "description": "输出 PDF 路径" },
+    "order": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "条目原始索引顺序；空数组表示自然排序"
+    },
+    "pageMode": {
+      "type": "string",
+      "enum": ["fit", "image", "paper"],
+      "default": "fit",
+      "description": "fit=无白边 96dpi；image=按图片 DPI；paper=统一纸张"
+    },
+    "paper": {
+      "type": "string",
+      "enum": ["A3", "A4", "A5", "B5", "Letter", "Legal", "custom"],
+      "default": "A4"
+    },
+    "dpiSource": {
+      "type": "string",
+      "enum": ["auto", "fixed"],
+      "default": "auto"
+    },
+    "defaultDpi": { "type": "number", "default": 96 },
+    "fixedDpi": { "type": "number", "default": 150 },
+    "maxLongEdgeMm": { "type": "number", "default": 0 },
+    "marginMm": { "type": "number", "default": 0 },
+    "compression": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["target-mb", "preset", "lossless"],
+          "default": "target-mb"
+        },
+        "targetMb": { "type": "number", "default": 20 },
+        "maxEdge": { "type": "integer", "default": 1600 },
+        "quality": { "type": "integer", "default": 82 },
+        "preset": {
+          "type": "string",
+          "enum": ["screen", "balanced", "print", "small"],
+          "default": "balanced"
+        },
+        "maxMegapixels": { "type": "number", "default": 0 }
+      }
+    },
+    "security": {
+      "type": "object",
+      "properties": {
+        "method": { "type": "string", "enum": ["aes256"], "default": "aes256" },
+        "userPass": { "type": "string", "description": "PDF 打开密码" },
+        "ownerPass": { "type": "string", "description": "所有者密码；空则基于打开密码派生" },
+        "print": { "type": "boolean", "default": true },
+        "copy": { "type": "boolean", "default": true },
+        "modify": { "type": "boolean", "default": true },
+        "annotate": { "type": "boolean", "default": true }
+      }
+    },
+    "bookmarks": { "type": "boolean", "default": true },
+    "title": { "type": "string", "default": "图片合集" },
+    "workers": { "type": "integer", "default": 4 },
+    "lang": { "type": "string", "enum": ["zh", "en"], "default": "zh" }
+  }
+}

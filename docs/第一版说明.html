@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ImageToSecurePDF 第一版说明</title>
+<style>
+  :root { color-scheme: light; --ink:#1f2328; --muted:#6b7280; --line:#e5e7eb; --bg:#ffffff; --soft:#f6f8fa; --blue:#0969da; --green:#1a7f37; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:32px; background:var(--soft); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; line-height:1.65; }
+  main { max-width:920px; margin:0 auto; background:var(--bg); border:1px solid var(--line); border-radius:16px; padding:36px 40px; }
+  h1 { margin:0 0 6px; font-size:26px; font-weight:600; }
+  h2 { margin:30px 0 12px; font-size:18px; font-weight:600; border-bottom:1px solid var(--line); padding-bottom:8px; }
+  p { margin:8px 0; }
+  .sub { color:var(--muted); font-size:14px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; background:#ddf4ff; color:var(--blue); font-size:12px; margin-left:8px; }
+  .ok { color:var(--green); font-weight:600; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; }
+  th,td { border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top; }
+  th { background:var(--soft); font-weight:600; }
+  code { background:var(--soft); padding:2px 6px; border-radius:5px; font-size:13px; }
+  img { width:100%; border:1px solid var(--line); border-radius:10px; margin-top:12px; }
+  ul { margin:8px 0 8px 22px; padding:0; }
+  li { margin:5px 0; }
+  .note { background:#fff8c5; border:1px solid #d4a72c; border-radius:8px; padding:12px 16px; font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ImageToSecurePDF 第一版说明 <span class="badge">3.0.0-alpha.1</span></h1>
+  <p class="sub">2026-11-21 · 一个共享 Go 引擎 + Windows/macOS 两个原生前端 · 已本地跑通完整链路</p>
+
+  <h2>这一版能看什么</h2>
+  <ul>
+    <li>macOS 桌面端沿用你现有「图片合集转加密PDF」的完整 AppKit 界面（2711 行源码），不是简化草稿：原生分栏、拖拽排序、预览、显示密码、画质滑块、失败报告、任务队列、中英切换、明暗主题、隐私说明全部保留，只是把底层引擎换成了合并版共享 Go 引擎，品牌与版本改为 ImageToSecurePDF 3.0.0-alpha.1。</li>
+    <li>共享 Go 引擎不再先用临时目录解压，而是直接流式读取 ZIP / 7z / RAR 里的图片。</li>
+    <li>PDF 侧已经合入合并版需要的能力：AES-256、权限位、文件名书签、PDF 元数据、A4/按 DPI 页面、无损嵌入模式。</li>
+    <li>Windows 前端已按同一套协议写好骨架，尚未在本机打包 EXE。</li>
+  </ul>
+
+  <h2>本地实测结果</h2>
+  <table>
+    <tr><th>项目</th><th>结果</th></tr>
+    <tr><td>输入</td><td>24 张 JPEG，原图共 3.9 MB；打成带密码 ZIP 后 835 KB（测试密码 <code>Test123456</code>）</td></tr>
+    <tr><td>输出</td><td><code>demo_secure.pdf</code>，995 KB，24 页，AES-256 打开密码 <code>OpenSesame</code></td></tr>
+    <tr><td>耗时</td><td>1.4 秒（4 线程，M 系列 Mac）</td></tr>
+    <tr><td>压缩</td><td>目标体积 2 MB，实际 995 KB；一轮完成，未触发重压</td></tr>
+    <tr><td>结构校验</td><td>24 个页面对象、24 个书签、/Encrypt、/DCTDecode、/Outlines、/Info 均存在</td></tr>
+    <tr><td>错误密码</td><td>生成失败且不留下 PDF，坏图逐张跳过并输出日志</td></tr>
+    <tr><td>自动化测试</td><td><span class="ok">go test ./... 全部通过</span></td></tr>
+  </table>
+
+  <h2>原型截图</h2>
+  <img src="preview.png" alt="ImageToSecurePDF macOS 原型界面">
+
+  <h2>文件位置</h2>
+  <table>
+    <tr><th>内容</th><th>路径</th></tr>
+    <tr><td>项目根目录</td><td><code>ImageToSecurePDF/</code></td></tr>
+    <tr><td>macOS 应用</td><td><code>macos/ImageToSecurePDF.app</code></td></tr>
+    <tr><td>macOS 安装包</td><td><code>ImageToSecurePDF_macOS_alpha1.zip</code></td></tr>
+    <tr><td>共享 Go 引擎</td><td><code>engine/</code></td></tr>
+    <tr><td>Windows 前端骨架</td><td><code>windows/</code></td></tr>
+    <tr><td>统一配置与消息表</td><td><code>shared/job.schema.json</code>、<code>shared/messages.json</code></td></tr>
+    <tr><td>样例 PDF</td><td><code>tests/fixtures/demo_secure.pdf</code></td></tr>
+  </table>
+
+  <h2>还没做 / 已知限制</h2>
+  <ul>
+    <li>Windows 端只是 PySide6 骨架，没有打包 EXE，也没有合入原 Studio 的明暗主题、九列详情视图和右键菜单。</li>
+    <li>第一版只实现 AES-256；AES-128/RC4 暂不支持。</li>
+    <li>加密 PDF 在微信内置预览中的兼容性还没用你真实的分享场景回归。</li>
+    <li>分卷 RAR 仍不支持；这是纯 Go RAR 读取器的已知边界。</li>
+    <li>严格来说，书签/元数据里的中文字符串还没有随 PDF 加密字典一起加密；后续版本需要补齐。</li>
+  </ul>
+
+  <h2>界面修正说明</h2>
+  <p>第一版曾用一个 440 行的 SwiftUI 草稿界面，确实像半成品。已改为直接复用本机已安装的「图片合集转加密PDF」完整 AppKit 源码（2711 行），保留全部原生控件与交互，仅替换品牌、版本和内置 Go helper。草稿已备份为 <code>macos/App.swift.swiftui-draft.bak</code>。</p>
+
+  <p class="note">测试压缩包密码 <code>Test123456</code> 和 PDF 密码 <code>OpenSesame</code> 只用于样例，请勿用于真实文件。</p>
+</main>
+</body>
+</html>

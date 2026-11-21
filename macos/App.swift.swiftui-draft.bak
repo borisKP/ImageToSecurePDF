@@ -1,0 +1,440 @@
+import AppKit
+import SwiftUI
+
+struct ListItem: Identifiable, Codable {
+    let index: Int
+    let name: String
+    let path: String
+    let size: Int64
+    let sizeText: String
+    var id: Int { index }
+}
+
+@MainActor
+final class EngineRunner: ObservableObject {
+    @Published var items: [ListItem] = []
+    @Published var logs: [String] = []
+    @Published var progress: Int = 0
+    @Published var status: String = "就绪"
+    @Published var isRunning: Bool = false
+    @Published var resultText: String = ""
+    @Published var version: String = "..."
+
+    private var process: Process?
+    private var stdinPipe: Pipe?
+    private var stdoutBuffer: String = ""
+
+    private var helperURL: URL {
+        let dir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        return dir.appendingPathComponent("imgtopdf-helper")
+    }
+
+    func runVersion() {
+        run(["version"])
+    }
+
+    func loadList(source: String, password: String) {
+        guard !source.isEmpty else { return }
+        resultText = ""
+        items = []
+        run(["list", "-src", source, "-archive-pass", password])
+    }
+
+    func build(source: String, output: String, archivePass: String, pdfPass: String,
+               targetMB: Int, pageMode: String, paper: String, compression: String,
+               preset: String, bookmarks: Bool, order: [Int]) {
+        guard !source.isEmpty, !output.isEmpty else {
+            appendLog("请先选择输入和输出路径")
+            return
+        }
+        resultText = ""
+        var args = [
+            "build",
+            "-src", source,
+            "-out", output,
+            "-archive-pass", archivePass,
+            "-pdf-pass", pdfPass,
+            "-target-mb", String(targetMB),
+            "-page", pageMode,
+            "-paper", paper,
+            "-compression-mode", compression,
+            "-preset", preset,
+            "-bookmarks", bookmarks ? "true" : "false",
+            "-lang", "zh",
+            "-title", "图片合集"
+        ]
+        if compression == "preset" {
+            args += ["-quality", "82"]
+        }
+        if !order.isEmpty {
+            args += ["-order", order.map(String.init).joined(separator: ",")]
+        }
+        run(args)
+    }
+
+    func cancel() {
+        guard var data = try? JSONSerialization.data(withJSONObject: ["type": "cancel"]) else { return }
+        data.append(0x0A)
+        try? stdinPipe?.fileHandleForWriting.write(contentsOf: data)
+        appendLog("已发送取消请求")
+    }
+
+    private func run(_ arguments: [String]) {
+        if let existing = process, existing.isRunning {
+            existing.terminate()
+        }
+        stdoutBuffer = ""
+        progress = 0
+        isRunning = true
+        status = "正在启动引擎…"
+        appendLog("$ " + arguments.joined(separator: " "))
+
+        let p = Process()
+        p.executableURL = helperURL
+        p.arguments = arguments
+        let outPipe = Pipe()
+        let inPipe = Pipe()
+        p.standardOutput = outPipe
+        p.standardInput = inPipe
+        stdinPipe = inPipe
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty { return }
+            let chunk = String(data: data, encoding: .utf8) ?? ""
+            Task { @MainActor in self.consume(chunk) }
+        }
+        p.terminationHandler = { proc in
+            Task { @MainActor in
+                if self.isRunning {
+                    self.isRunning = false
+                    self.progress = 100
+                    self.status = proc.terminationStatus == 0 ? "完成" : "失败（退出码 \(proc.terminationStatus)）"
+                }
+                outPipe.fileHandleForReading.readabilityHandler = nil
+                self.stdinPipe = nil
+            }
+        }
+        do {
+            try p.run()
+            process = p
+        } catch {
+            isRunning = false
+            status = "引擎启动失败"
+            appendLog("无法启动 \(helperURL.lastPathComponent)：\(error.localizedDescription)")
+        }
+    }
+
+    private func consume(_ chunk: String) {
+        stdoutBuffer += chunk
+        while let idx = stdoutBuffer.firstIndex(of: "\n") {
+            let line = String(stdoutBuffer[..<idx])
+            stdoutBuffer.removeSubrange(...idx)
+            guard let data = line.data(using: .utf8),
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let type = obj["type"] as? String else { continue }
+            handle(event: type, obj: obj)
+        }
+    }
+
+    private func handle(event: String, obj: [String: Any]) {
+        switch event {
+        case "version":
+            version = obj["version"] as? String ?? "?"
+        case "list":
+            if let arr = obj["items"] as? [[String: Any]] {
+                items = arr.compactMap { d in
+                    guard let index = d["index"] as? Int,
+                          let name = d["name"] as? String,
+                          let path = d["path"] as? String else { return nil }
+                    let size = (d["size"] as? NSNumber)?.int64Value ?? 0
+                    let sizeText = d["sizeText"] as? String ?? "—"
+                    return ListItem(index: index, name: name, path: path, size: size, sizeText: sizeText)
+                }
+            }
+            status = "已找到 \(items.count) 张图片"
+        case "progress":
+            if let n = obj["percent"] as? Int { progress = n }
+            status = obj["message"] as? String ?? status
+        case "log":
+            if let message = obj["message"] as? String {
+                appendLog(message)
+            } else if let key = obj["key"] as? String {
+                let args = (obj["args"] as? [String]) ?? []
+                appendLog(key + (args.isEmpty ? "" : " " + args.joined(separator: " ")))
+            }
+        case "result":
+            let pages = (obj["pages"] as? Int) ?? 0
+            let sizeText = obj["sizeText"] as? String ?? "—"
+            resultText = "\(pages) 页 · \(sizeText)"
+            status = "完成"
+            isRunning = false
+            progress = 100
+        case "error":
+            let message = obj["message"] as? String ?? (obj["key"] as? String ?? "未知错误")
+            status = message
+            appendLog("错误：" + message)
+            isRunning = false
+        default:
+            break
+        }
+    }
+
+    private func appendLog(_ line: String) {
+        logs.append(line)
+        if logs.count > 200 { logs.removeFirst(logs.count - 200) }
+    }
+}
+
+@main
+struct ImageToSecurePDFApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .frame(minWidth: 760, minHeight: 820)
+        }
+        .windowStyle(.titleBar)
+        .commands {
+            CommandGroup(replacing: .newItem) {}
+        }
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var runner = EngineRunner()
+    @State private var source: String = ""
+    @State private var output: String = ""
+    @State private var archivePass: String = ""
+    @State private var pdfPass: String = ""
+    @State private var targetMB: Int = 20
+    @State private var pageMode: String = "fit"
+    @State private var paper: String = "A4"
+    @State private var compression: String = "target-mb"
+    @State private var preset: String = "balanced"
+    @State private var bookmarks: Bool = true
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    header
+                    inputBox
+                    outputBox
+                    optionsBox
+                    actionRow
+                    listBox
+                    logBox
+                }
+                .padding(18)
+            }
+            .navigationTitle("ImageToSecurePDF")
+        }
+        .task {
+            runner.runVersion()
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("加密压缩包 → 小体积加密 PDF")
+                    .font(.system(size: 20, weight: .semibold))
+                Text("共享 Go 引擎 · Windows/macOS 双端原型")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("v\(runner.version)")
+                .font(.system(size: 12, design: .monospaced))
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.12), in: Capsule())
+        }
+    }
+
+    private var inputBox: some View {
+        GroupBox("① 输入") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    TextField("图片文件夹或加密 ZIP / 7z / RAR 路径", text: $source)
+                        .textFieldStyle(.roundedBorder)
+                    Button("选择…") { chooseInput() }
+                }
+                SecureField("压缩包密码（无密码留空）", text: $archivePass)
+                    .textFieldStyle(.roundedBorder)
+                Button("读取图片清单") {
+                    runner.loadList(source: source, password: archivePass)
+                }
+                .disabled(source.isEmpty || runner.isRunning)
+            }
+            .padding(8)
+        }
+    }
+
+    private var outputBox: some View {
+        GroupBox("② 输出与加密") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    TextField("输出 PDF 路径", text: $output)
+                        .textFieldStyle(.roundedBorder)
+                    Button("选择…") { chooseOutput() }
+                }
+                SecureField("PDF 打开密码（留空则不加密）", text: $pdfPass)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(8)
+        }
+    }
+
+    private var optionsBox: some View {
+        GroupBox("③ 压缩与页面") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Picker("压缩模式", selection: $compression) {
+                        Text("目标体积").tag("target-mb")
+                        Text("预设画质").tag("preset")
+                        Text("无损嵌入").tag("lossless")
+                    }
+                    .pickerStyle(.segmented)
+                    if compression == "preset" {
+                        Picker("预设", selection: $preset) {
+                            Text("屏幕").tag("screen")
+                            Text("均衡").tag("balanced")
+                            Text("印刷").tag("print")
+                            Text("极限").tag("small")
+                        }
+                        .frame(width: 180)
+                    }
+                }
+                HStack {
+                    Text("目标体积")
+                    TextField("MB", value: $targetMB, format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 70)
+                    Stepper("", value: $targetMB, in: 1...500)
+                        .labelsHidden()
+                    Text("MB").foregroundStyle(.secondary)
+                    Spacer()
+                    Toggle("按文件名写书签", isOn: $bookmarks)
+                }
+                .disabled(compression != "target-mb")
+                HStack {
+                    Picker("页面模式", selection: $pageMode) {
+                        Text("fit 无白边").tag("fit")
+                        Text("按图片 DPI").tag("image")
+                        Text("统一纸张").tag("paper")
+                    }
+                    .pickerStyle(.segmented)
+                    if pageMode == "paper" {
+                        Picker("纸张", selection: $paper) {
+                            Text("A4").tag("A4")
+                            Text("A3").tag("A3")
+                            Text("A5").tag("A5")
+                            Text("B5").tag("B5")
+                            Text("Letter").tag("Letter")
+                        }
+                        .frame(width: 120)
+                    }
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private var actionRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button {
+                    runner.build(source: source, output: output,
+                                 archivePass: archivePass, pdfPass: pdfPass,
+                                 targetMB: targetMB, pageMode: pageMode, paper: paper,
+                                 compression: compression, preset: preset,
+                                 bookmarks: bookmarks, order: runner.items.map(\.index))
+                } label: {
+                    Label("生成 PDF", systemImage: "doc.text.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(source.isEmpty || output.isEmpty || runner.isRunning)
+
+                Button("取消") { runner.cancel() }
+                    .disabled(!runner.isRunning)
+
+                Spacer()
+                if !runner.resultText.isEmpty {
+                    Text(runner.resultText)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.green)
+                }
+            }
+            if runner.isRunning {
+                ProgressView(value: Double(runner.progress), total: 100)
+                Text(runner.status).font(.system(size: 12)).foregroundStyle(.secondary)
+            } else {
+                Text(runner.status).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var listBox: some View {
+        GroupBox("④ 图片清单（\(runner.items.count) 张，顺序即 PDF 页序）") {
+            List {
+                ForEach(Array(runner.items.enumerated()), id: \.offset) { idx, item in
+                    HStack(spacing: 8) {
+                        Text("\(idx + 1)").foregroundStyle(.secondary).frame(width: 26, alignment: .trailing)
+                        Text(item.name).lineLimit(1)
+                        Spacer()
+                        Text(item.sizeText).foregroundStyle(.secondary)
+                        Button("↑") { move(idx, -1) }.disabled(idx == 0)
+                        Button("↓") { move(idx, 1) }.disabled(idx == runner.items.count - 1)
+                    }
+                    .font(.system(size: 12))
+                }
+            }
+            .frame(height: 170)
+            .padding(6)
+        }
+    }
+
+    private var logBox: some View {
+        GroupBox("⑤ 引擎日志") {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(runner.logs, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(6)
+            }
+            .frame(height: 130)
+        }
+    }
+
+    private func chooseInput() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        if panel.runModal() == .OK, let url = panel.url {
+            source = url.path
+            let base = url.deletingPathExtension().lastPathComponent
+            output = url.deletingLastPathComponent()
+                .appendingPathComponent(base + "_secure.pdf").path
+        }
+    }
+
+    private func chooseOutput() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "output_secure.pdf"
+        panel.prompt = "选择"
+        if panel.runModal() == .OK, let url = panel.url {
+            output = url.path
+        }
+    }
+
+    private func move(_ index: Int, _ delta: Int) {
+        let target = index + delta
+        guard target >= 0, target < runner.items.count else { return }
+        runner.items.swapAt(index, target)
+    }
+}
