@@ -4,7 +4,7 @@
 
 这是 `borisKP/ImageToPDF_Studio`（Windows）与 `borisKP/image-to-encrypted-pdf`（macOS）的合并版，采用「一个共享 Go 引擎 + 两个原生前端」路线。
 
-> 改天继续开发前，请先读 [docs/PLAN.md](docs/PLAN.md)、[docs/DECISIONS.md](docs/DECISIONS.md)、[docs/STATUS.md](docs/STATUS.md)。
+> **更换智能体 / 重新接手请先读 [docs/CONVERSATION.md](docs/CONVERSATION.md)**（对话全流程交接），再读 [docs/PLAN.md](docs/PLAN.md)、[docs/DECISIONS.md](docs/DECISIONS.md)、[docs/STATUS.md](docs/STATUS.md)。
 
 ## 架构
 
